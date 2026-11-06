@@ -1,0 +1,7 @@
+---
+# cPanel Git deployment. Run by .github/workflows/deploy.yml (and by
+# cPanel -> Git Version Control -> Deploy HEAD Commit). The file name must
+# start with a dot or cPanel ignores it.
+deployment:
+  tasks:
+    - /bin/bash /home/theinsightinc/public_html/harvey-sales/scripts/cpanel_deploy.sh

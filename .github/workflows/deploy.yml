@@ -6,18 +6,46 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      AUTH: "cpanel ${{ secrets.CPANEL_USER }}:${{ secrets.CPANEL_TOKEN }}"
-      API: "https://${{ secrets.CPANEL_HOST }}:2083/execute"
-      REPO: "/home/theinsightinc/public_html/harvey-sales"
+      CPANEL_USER: ${{ secrets.CPANEL_USER }}
+      CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+      CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+      REPO: /home/theinsightinc/public_html/harvey-sales
     steps:
+      - name: Check secrets
+        run: |
+          for v in CPANEL_USER CPANEL_TOKEN CPANEL_HOST; do
+            [ -n "${!v}" ] || { echo "::error::Secret $v is not set (Settings > Secrets and variables > Actions)"; exit 1; }
+          done
+          # CPANEL_HOST must be a bare host name: no https://, port or path.
+          host="${CPANEL_HOST#https://}"; host="${host#http://}"; host="${host%%/*}"; host="${host%%:*}"
+          echo "API=https://$host:2083/execute" >> "$GITHUB_ENV"
+
       - name: Pull latest develop on server
         run: |
-          curl -sSf -H "Authorization: $AUTH" \
-            "$API/VersionControl/update?repository_root=$REPO&branch=develop"
+          uapi() {  # uapi <Module/function> key=value...  -> fails loudly on HTTP or UAPI errors
+            local fn="$1"; shift
+            local args=(); for kv in "$@"; do args+=(--data-urlencode "$kv"); done
+            local code
+            code=$(curl -sS -G -o resp.json -w '%{http_code}' --max-time 300 \
+                   -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN" "${args[@]}" "$API/$fn")
+            echo "HTTP $code from $fn"; cat resp.json; echo
+            case "$code" in
+              401|403) echo "::error::cPanel rejected the login (HTTP $code). Check CPANEL_USER is the cPanel username and CPANEL_TOKEN is a valid API token (cPanel > Security > Manage API Tokens), with no IP restriction that blocks GitHub."; return 1 ;;
+              404) echo "::error::$fn not found (HTTP 404). Check CPANEL_HOST and that Git Version Control is enabled on this account."; return 1 ;;
+              2??) ;;
+              *) echo "::error::$fn failed with HTTP $code"; return 1 ;;
+            esac
+            if [ "$(jq -r '.status' resp.json)" != "1" ]; then
+              echo "::error::$fn: $(jq -r '(.errors // []) | join("; ")' resp.json)"; return 1
+            fi
+          }
+          declare -f uapi > uapi.sh
+          uapi VersionControl/update repository_root="$REPO" branch=develop
 
-      - name: Run .cpanel.yml (venv, pip install, restart)
+      - name: Deploy (.cpanel.yml - venv, pip install, restart)
         run: |
-          curl -sSf -H "Authorization: $AUTH" \
-            "$API/VersionControlDeployment/create?repository_root=$REPO"
+          source uapi.sh
+          uapi VersionControlDeployment/create repository_root="$REPO"
+          echo "Deployment queued. Log on server: ~/.cpanel/logs/ (vc_*_git_deploy.log)"
