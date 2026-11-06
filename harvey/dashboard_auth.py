@@ -274,6 +274,34 @@ def is_loopback(host: str) -> bool:
         return False
 
 
+PUBLIC_HOSTS_ENV = "HARVEY_DASHBOARD_PUBLIC_HOSTS"
+_HOSTNAME_RE = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+")
+
+
+def public_hosts_from_env() -> frozenset[str]:
+    """Extra host names the dashboard answers to, over HTTPS only.
+
+    Empty by default: the dashboard is loopback-only. A hosted deployment
+    (cPanel/Passenger, see passenger_wsgi.py) sets
+    HARVEY_DASHBOARD_PUBLIC_HOSTS=example.com,www.example.com. Every other
+    check, the bearer token included, still applies to those hosts.
+    A malformed entry stops startup rather than being silently skipped.
+    """
+    raw = os.environ.get(PUBLIC_HOSTS_ENV, "")
+    hosts = set()
+    for entry in raw.split(","):
+        entry = entry.strip().lower()
+        if not entry:
+            continue
+        host = parse_host(entry)
+        if (host is None or host != entry or is_loopback(host)
+                or not _HOSTNAME_RE.fullmatch(host)):
+            raise ValueError(f"{PUBLIC_HOSTS_ENV}: {entry!r} is not a plain host name "
+                             "(no scheme, port or path, e.g. example.com)")
+        hosts.add(host)
+    return frozenset(hosts)
+
+
 def is_public_path(method: str, path: str) -> bool:
     if method not in ("GET", "HEAD"):
         return False
@@ -303,9 +331,10 @@ class DashboardGuard:
     """ASGI middleware applying the checks in the module docstring to every
     request, and the security headers to every response."""
 
-    def __init__(self, app, store: TokenStore):
+    def __init__(self, app, store: TokenStore, public_hosts: frozenset[str] | None = None):
         self.app = app
         self.store = store
+        self.public_hosts = public_hosts_from_env() if public_hosts is None else public_hosts
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -340,10 +369,15 @@ class DashboardGuard:
         # 1. Host, before anything else.
         hosts = headers.get("host", [])
         host = parse_host(hosts[0]) if len(hosts) == 1 else None
-        if host is None or not is_loopback(host):
+        hosted = host is not None and host in self.public_hosts
+        if host is None or not (hosted or is_loopback(host)):
             return await deny(400, "bad_host",
                               "This dashboard only answers to localhost / 127.0.0.1.")
+        if hosted and scope.get("scheme") != "https":
+            return await deny(400, "https_required",
+                              "Open this dashboard over https://, not http://.")
         host_header = hosts[0].lower()
+        scheme = "https" if hosted else "http"
 
         # 2. Browser provenance.
         public = is_public_path(method, path)
@@ -351,7 +385,7 @@ class DashboardGuard:
                       and headers.get("sec-fetch-mode", [""])[0] == "navigate"
                       and headers.get("sec-fetch-dest", [""])[0] == "document")
         origins = headers.get("origin", [])
-        if origins and (len(origins) != 1 or origins[0].lower() != f"http://{host_header}"):
+        if origins and (len(origins) != 1 or origins[0].lower() != f"{scheme}://{host_header}"):
             if not navigation:
                 return await deny(403, "cross_origin", "Cross-origin requests are refused.")
         site = headers.get("sec-fetch-site", [])

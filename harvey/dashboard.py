@@ -5,6 +5,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import stat
@@ -3195,9 +3196,23 @@ async def static_file(path: str):
     )
 
 
+BASE_PATH_ENV = "HARVEY_BASE_PATH"
+_BASE_PATH_RE = re.compile(r"(/[A-Za-z0-9._~-]+)+")
+
+
+def _base_path() -> str:
+    """The URL prefix the dashboard is served under ("" locally, e.g.
+    "/harvey-sales" when hosted by passenger_wsgi.py, which strips it from
+    request paths before they get here)."""
+    base = os.environ.get(BASE_PATH_ENV, "").strip().rstrip("/")
+    return base if _BASE_PATH_RE.fullmatch(base) else ""
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
-    return (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    base = _base_path()
+    return html.replace('="/static/', f'="{base}/static/') if base else html
 
 
 class DashboardSetupError(Exception):

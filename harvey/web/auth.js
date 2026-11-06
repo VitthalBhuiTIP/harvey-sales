@@ -33,12 +33,16 @@ function clearAuthToken() {
   try { sessionStorage.removeItem(AUTH_KEY); } catch { /* ignore */ }
 }
 
+// The prefix the dashboard is served under: "" locally, "/harvey-sales"
+// when hosted at https://example.com/harvey-sales/ (the page is always "/").
+const BASE_PATH = (window.location.pathname || '/').replace(/\/[^/]*$/, '');
+
 // A same-origin URL for an absolute path ("/api/..."), or null.
 function sameOriginUrl(path) {
   if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') ||
       path.includes('\\')) return null;
   let url;
-  try { url = new URL(path, window.location.origin); } catch { return null; }
+  try { url = new URL(BASE_PATH + path, window.location.origin); } catch { return null; }
   return url.origin === window.location.origin ? url : null;
 }
 
