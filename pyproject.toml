@@ -43,6 +43,10 @@ dev = [
 mysql = [
     "pymysql>=1.1,<3",
 ]
+# Only for hosting the dashboard on cPanel / Passenger (passenger_wsgi.py).
+cpanel = [
+    "a2wsgi>=1.10,<2",
+]
 # Only for importing .xlsx lists (`harvey import-contacts`, the dashboard imports).
 excel = [
     "openpyxl>=3.1,<4",

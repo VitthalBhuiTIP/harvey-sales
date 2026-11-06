@@ -13,3 +13,5 @@ pydantic>=2.5,<3
 pytz>=2024.1
 fastapi>=0.115,<1
 uvicorn>=0.34,<1
+# Only for hosting the dashboard on cPanel / Passenger (passenger_wsgi.py).
+a2wsgi>=1.10,<2

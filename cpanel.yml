@@ -1,0 +1,11 @@
+---
+deployment:
+  tasks:
+    - export APPDIR=/home/theinsightinc/public_html/harvey-sales
+    - export VENV=/home/theinsightinc/venvs/harvey-sales
+    - /bin/mkdir -p /home/theinsightinc/venvs
+    - /bin/test -x $VENV/bin/python || /usr/bin/python3 -m venv $VENV
+    - $VENV/bin/pip install --upgrade pip
+    - $VENV/bin/pip install -r $APPDIR/requirements.txt
+    - /bin/mkdir -p $APPDIR/tmp
+    - /bin/touch $APPDIR/tmp/restart.txt
