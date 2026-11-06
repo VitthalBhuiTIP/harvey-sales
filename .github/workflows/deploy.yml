@@ -1,0 +1,23 @@
+name: Deploy to cPanel
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AUTH: "cpanel ${{ secrets.CPANEL_USER }}:${{ secrets.CPANEL_TOKEN }}"
+      API: "https://${{ secrets.CPANEL_HOST }}:2083/execute"
+      REPO: "/home/theinsightinc/public_html/harvey-sales"
+    steps:
+      - name: Pull latest develop on server
+        run: |
+          curl -sSf -H "Authorization: $AUTH" \
+            "$API/VersionControl/update?repository_root=$REPO&branch=develop"
+
+      - name: Run .cpanel.yml (venv, pip install, restart)
+        run: |
+          curl -sSf -H "Authorization: $AUTH" \
+            "$API/VersionControlDeployment/create?repository_root=$REPO"
